@@ -2,6 +2,7 @@
 
 [tips](https://leg100.github.io/en/posts/building-bubbletea-programs/)
 
+```
 project
 ├── cmd                      # command-related files
 │   └── app                  # Application entry point
@@ -19,3 +20,4 @@ project
 ├── configs                  # configuration files
 ├── go.mod                   # go module definition
 └── go.sum                   # go module checksum file
+```
