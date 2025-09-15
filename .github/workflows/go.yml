@@ -2,7 +2,9 @@ name: Go
 
 on:
   push:
+    branches: [ "*" ]  # matches all branches
   pull_request:
+    branches: [ "*" ]  # triggers on PRs to any branch
 
 jobs:
 
@@ -11,13 +13,13 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Go
+    - name: set up go
       uses: actions/setup-go@v4
       with:
         go-version: '1.25.1'
 
-    - name: Build
+    - name: build
       run: go build -v -o envelope ./cmd/main.go
 
-    - name: Test
+    - name: test
       run: go test -v ./...
