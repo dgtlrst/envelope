@@ -121,10 +121,9 @@ func (m Model) headerView() string {
 	divider := lipgloss.NewStyle().
 		Width(m.width).
 		Foreground(lipgloss.Color("240")).
-		// replace --- with something more reasonable here (like a header border)
-		Render("─────────────────────────────────────────────────────────────────────────────────")
+		Border(lipgloss.NormalBorder(), false, false, true, false)
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, divider)
+	return lipgloss.JoinVertical(lipgloss.Left, header, divider.Render())
 }
 
 func (m Model) footerView() string {
