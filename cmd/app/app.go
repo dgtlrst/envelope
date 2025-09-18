@@ -1,8 +1,6 @@
 package app
 
-// todo:
-// 1. updateViewportContent() is called too often, needs to be optimized
-//    also it currently is the one way to update "visual" positions
+// Text editor using Bubble Tea with optimized cursor rendering
 
 import (
 	"envelope/pkg/edit"
@@ -10,6 +8,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -22,121 +21,61 @@ type Model struct {
 	cursor        *edit.CursorPointer
 	ready         bool
 
-	baseContent   string   // content without cursosr
-	contentDirty  bool     // track if buffer content changed
-	lastCursorPos struct { // track cursor position changes
-		X, Y int
-	}
-	renderedContent string // final content with cursor (cached)
+	visualCursor cursor.Model
+	contentDirty bool
 }
 
 func NewModel() Model {
+	// Create standard cursor
+	visualCursor := cursor.New()
+	visualCursor.SetMode(cursor.CursorBlink)
+	visualCursor.BlinkSpeed = 500
+
+	visualCursor.Style = lipgloss.NewStyle().
+		Background(lipgloss.Color("#00FF00")).
+		Foreground(lipgloss.Color("#000000"))
+	visualCursor.TextStyle = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#00FF00"))
+
 	return Model{
 		buffer:       edit.NewTextBuffer(),
 		cursor:       edit.NewCursor(0, 0),
+		visualCursor: visualCursor,
 		ready:        false,
-		contentDirty: true, // force initial render
-		lastCursorPos: struct {
-			X int
-			Y int
-		}{-1, -1}, // invalid initial position
+		contentDirty: true,
 	}
 }
 
-func (m *Model) generateBaseContent() {
+func (m *Model) updateViewportContent() {
+	// update only if buf content has changed
 	if !m.contentDirty {
-		return // skip if content hasn't changed
-	}
-
-	var lines []string
-	for _, line := range m.buffer.Lines {
-		lines = append(lines, string(line))
-	}
-	m.baseContent = strings.Join(lines, "\n")
-	m.contentDirty = false
-}
-
-// adds cursor to base content at current position
-func (m *Model) injectCursor() string {
-	if m.baseContent == "" {
-		return ""
-	}
-
-	// Safety check for cursor position
-	if m.cursor.Y >= len(m.buffer.Lines) {
-		return m.baseContent
-	}
-
-	// Find the start position of the cursor line in baseContent
-	lineStart := 0
-	for i := 0; i < m.cursor.Y; i++ {
-		lineStart += len(string(m.buffer.Lines[i])) + 1 // +1 for newline
-	}
-
-	// Find the end position of the cursor line
-	currentLineStr := string(m.buffer.Lines[m.cursor.Y])
-	lineEnd := lineStart + len(currentLineStr)
-
-	// Calculate cursor position within the line
-	cursorPos := lineStart + m.cursor.X
-	if cursorPos > lineEnd {
-		cursorPos = lineEnd
-	}
-
-	// Build result by inserting cursor at the right position
-	var result strings.Builder
-	result.Grow(len(m.baseContent) + 3) // Pre-allocate space
-
-	// Add content before cursor
-	result.WriteString(m.baseContent[:cursorPos])
-
-	// Add cursor
-	result.WriteString("│")
-
-	// Add content after cursor
-	result.WriteString(m.baseContent[cursorPos:])
-
-	return result.String()
-}
-
-func (m *Model) updateViewportContentSmart() {
-	// check if cursor position changed
-	cursorMoved := m.cursor.X != m.lastCursorPos.X || m.cursor.Y != m.lastCursorPos.Y
-
-	// only update if content or cursor changed
-	if !m.contentDirty && !cursorMoved {
 		return
 	}
 
-	// Update base content if buffer changed
-	m.generateBaseContent()
-
-	// Generate final content with cursor
-	finalContent := m.injectCursor()
-
-	// Only call SetContent if content actually changed
-	if finalContent != m.renderedContent {
-		m.viewport.SetContent(finalContent)
-		m.renderedContent = finalContent
+	var lines = make([]string, len(m.buffer.Lines)) // pre-allocate slice to avoid reallocation
+	for i, line := range m.buffer.Lines {
+		lines[i] = string(line)
 	}
 
-	// Update cursor position tracking
-	m.lastCursorPos.X = m.cursor.X
-	m.lastCursorPos.Y = m.cursor.Y
-}
-
-// markContentDirty flags that buffer content has changed
-func (m *Model) markContentDirty() {
-	m.contentDirty = true
+	content := strings.Join(lines, "\n")
+	m.viewport.SetContent(content)
+	m.contentDirty = false
 }
 
 func (m Model) Init() tea.Cmd {
-	return nil
+	return m.visualCursor.Focus() // focus the cursor
 }
 
 // 1. fix alt and tab presses being considered normal characters
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
+	var cmds []tea.Cmd
+	var cursorCmd tea.Cmd
+
+	// update cursor
+	m.visualCursor, cursorCmd = m.visualCursor.Update(msg)
+	if cursorCmd != nil {
+		cmds = append(cmds, cursorCmd)
+	}
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -152,13 +91,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// m.UndoStack.Push(m.Buffer)
 			m.buffer.InsertRune(m.cursor.Y, m.cursor.X, r)
 			m.cursor.MoveRight(m.buffer)
-			m.markContentDirty() // NEW LINE
+			m.contentDirty = true
 
 		case msg.Type == tea.KeyEnter:
 			m.buffer.InsertNewLine(m.cursor.Y, m.cursor.X)
 			m.cursor.Y++
 			m.cursor.X = 0
-			m.markContentDirty()
+			m.contentDirty = true
 
 		case msg.Type == tea.KeyBackspace:
 			// todo: move this functionality into deleteRune() - this is where these cases should be handled
@@ -177,7 +116,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// clamp cursor position to valid range, just in case
 			m.cursor.Clamp(m.buffer)
-			m.markContentDirty()
+			m.contentDirty = true
 
 		case msg.Type == tea.KeyLeft:
 			m.cursor.MoveLeft(m.buffer)
@@ -210,7 +149,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.ready {
 			m.viewport = viewport.New(msg.Width, msg.Height-verticalMarginHeight)
 			m.viewport.YPosition = headerHeight
-			m.updateViewportContentSmart()
+			m.updateViewportContent()
 			m.ready = true
 		} else {
 			m.viewport.Width = msg.Width
@@ -218,14 +157,54 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Only update viewport content when necessary
-	switch msg.(type) {
-	case tea.KeyMsg, tea.WindowSizeMsg:
-		m.updateViewportContentSmart()
+	// update key press
+	m.updateViewportContent()
+
+	// Update viewport
+	var viewportCmd tea.Cmd
+	m.viewport, viewportCmd = m.viewport.Update(msg)
+	if viewportCmd != nil {
+		cmds = append(cmds, viewportCmd)
 	}
 
-	m.viewport, cmd = m.viewport.Update(msg)
-	return m, cmd
+	return m, tea.Batch(cmds...)
+}
+
+// set the character under the cursor
+func (m *Model) setCursorCharacter() {
+	// Always display a thick block cursor
+	m.visualCursor.SetChar("█")
+}
+
+// render viewport content with cursor overlay
+func (m Model) viewportWithCursor() string {
+	baseView := m.viewport.View()
+
+	// calculate cursor position in rendered view
+	cursorLine := m.cursor.Y - m.viewport.YOffset
+	if cursorLine < 0 || cursorLine >= m.viewport.Height {
+		return baseView // cursor not visible in viewport
+	}
+
+	// split into lines and overlay cursor
+	lines := strings.Split(baseView, "\n")
+	if cursorLine < len(lines) {
+		line := lines[cursorLine]
+		runes := []rune(line)
+
+		if m.cursor.X < len(runes) {
+			// replace character at cursor position with styled cursor
+			before := string(runes[:m.cursor.X])
+			after := string(runes[m.cursor.X+1:])
+			cursorChar := m.visualCursor.View()
+			lines[cursorLine] = before + cursorChar + after
+		} else if m.cursor.X == len(runes) {
+			// cursor at end of line
+			lines[cursorLine] = line + m.visualCursor.View()
+		}
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 func (m Model) headerView() string {
@@ -265,9 +244,13 @@ func (m Model) View() string {
 	if !m.ready {
 		return "\n  initializing..."
 	}
+
+	// set character under cursor for visual cursor
+	m.setCursorCharacter()
+
 	return lipgloss.JoinVertical(lipgloss.Top,
 		m.headerView(),
-		m.viewport.View(),
+		m.viewportWithCursor(), // render viewport with cursor overlay
 		m.footerView(),
 	)
 }
