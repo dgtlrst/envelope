@@ -172,7 +172,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // set the character under the cursor
 func (m *Model) setCursorCharacter() {
-	// Always display a thick block cursor
 	m.visualCursor.SetChar("█")
 }
 
@@ -207,7 +206,15 @@ func (m Model) viewportWithCursor() string {
 	return strings.Join(lines, "\n")
 }
 
-func (m Model) headerView() string {
+func (m Model) View() string {
+	if !m.ready {
+		return "\n initializing..."
+	}
+
+	// set cursor character
+	m.setCursorCharacter()
+
+	// render hdr
 	header := lipgloss.NewStyle().
 		Align(lipgloss.Center).
 		Width(m.width).
@@ -215,10 +222,7 @@ func (m Model) headerView() string {
 		Foreground(lipgloss.Color("205")).
 		Render("edit")
 
-	return lipgloss.JoinVertical(lipgloss.Left, header)
-}
-
-func (m Model) footerView() string {
+	// render ftr
 	totalLines := len(m.buffer.Lines)
 	if totalLines == 0 {
 		totalLines = 1
@@ -227,23 +231,18 @@ func (m Model) footerView() string {
 	info := fmt.Sprintf("line %d, col %d | lines: %d | press ctrl+c to quit",
 		m.cursor.Y+1, m.cursor.X+1, totalLines)
 
-	return lipgloss.NewStyle().
+	footer := lipgloss.NewStyle().
 		Align(lipgloss.Center).
 		Width(m.width).
 		Foreground(lipgloss.Color("240")).
 		Render(info)
-}
 
-func (m Model) View() string {
-	if !m.ready {
-		return "\n initializing..."
-	}
+	// render content
+	content := lipgloss.NewStyle().
+		Width(m.width).
+		Height(m.height-lipgloss.Height(header)-lipgloss.Height(footer)).
+		Align(lipgloss.Center, lipgloss.Center).
+		Render(m.viewportWithCursor())
 
-	m.setCursorCharacter()
-
-	return lipgloss.JoinVertical(lipgloss.Top,
-		m.headerView(),
-		m.viewportWithCursor(), // render viewport with cursor overlay
-		m.footerView(),
-	)
+	return lipgloss.JoinVertical(lipgloss.Top, header, content, footer)
 }
