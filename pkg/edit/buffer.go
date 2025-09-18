@@ -23,7 +23,7 @@ func NewTextBufferWithLines(lines [][]rune) *TextBuffer {
 
 type Buffer interface {
 	InsertRune(line, col int, ch rune)
-	DeleteRune(line, col int, ch rune)
+	DeleteRune(line, col int)
 	InsertNewLine(line, col int)
 	MergeLine(line int)
 
@@ -41,17 +41,19 @@ func (buffer *TextBuffer) InsertRune(line, col int, ch rune) {
 		buffer.SetDirty(true)
 	}
 }
-func (buffer *TextBuffer) DeleteRune(line, col int, ch rune) {
+func (buffer *TextBuffer) DeleteRune(line, col int) {
 	if buffer.validateIndex(line, col) {
 		if col == 0 { // delete new line
 			if line == 0 {
 				return // top of the buffer
 			}
+			// case where we delete current line and merge into previous
 			buffer.MergeLine(line - 1) // merge into previous line
 			buffer.SetDirty(true)
 			return
 		}
-		// base case
+
+		// base case, where we delete a rune somewhere in the line..
 		lineRunes := buffer.Lines[line]
 		lineRunes = append(lineRunes[:col-1], lineRunes[col:]...)
 		buffer.Lines[line] = lineRunes
@@ -76,9 +78,11 @@ func (buffer *TextBuffer) InsertNewLine(line, col int) {
 	buffer.SetDirty(true)
 }
 func (buffer *TextBuffer) MergeLine(line int) {
+	// TODO: check if line is valid (outsource this to a separate function)
 	if line < 0 || line+1 >= len(buffer.Lines) {
 		return
 	}
+	// merge line+1 into THE END OF line
 	buffer.Lines[line] = append(buffer.Lines[line], buffer.Lines[line+1]...)
 	buffer.Lines = append(buffer.Lines[:line+1], buffer.Lines[line+2:]...)
 	buffer.SetDirty(true)

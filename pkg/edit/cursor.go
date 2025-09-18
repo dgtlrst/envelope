@@ -23,12 +23,18 @@ type Cursor interface {
 func (c *CursorPointer) GetPosition() (x, y int) {
 	return c.X, c.Y
 }
+
 func (c *CursorPointer) SetPosition(x, y int, buffer Buffer) {
 	c.X = x
 	c.Y = y
 	c.Clamp(buffer)
 }
 
+// "clamps" the cursor to a valid position
+// usually called after manipulating the buffer
+// such as SetPosition() or DeleteRune()
+// we need to deprecate this function
+// and remove the need for the user to call it altogether
 func (c *CursorPointer) Clamp(buffer Buffer) {
 	if c.Y < 0 {
 		c.Y = 0
@@ -44,9 +50,13 @@ func (c *CursorPointer) Clamp(buffer Buffer) {
 }
 
 func (c *CursorPointer) MoveLeft(buffer Buffer) {
+	if c.X == 0 && c.Y == 0 {
+		return
+	}
+
 	if c.X > 0 {
 		c.X--
-	} else if c.Y > 0 {
+	} else if c.X == 0 && c.Y > 0 {
 		c.Y--
 		c.X = len(buffer.GetLine(c.Y))
 	}
@@ -61,6 +71,7 @@ func (c *CursorPointer) MoveRight(buffer Buffer) {
 		c.X = 0
 	}
 }
+
 func (c *CursorPointer) MoveUp(buffer Buffer) {
 	if c.Y > 0 {
 		c.Y--
@@ -70,6 +81,7 @@ func (c *CursorPointer) MoveUp(buffer Buffer) {
 		}
 	}
 }
+
 func (c *CursorPointer) MoveDown(buffer Buffer) {
 	if c.Y < buffer.LineCount()-1 {
 		c.Y++
