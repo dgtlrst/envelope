@@ -209,22 +209,16 @@ func (m Model) viewportWithCursor() string {
 
 func (m Model) headerView() string {
 	header := lipgloss.NewStyle().
-		Width(m.width).
 		Align(lipgloss.Center).
-		Bold(true).
+		Width(m.width).
+		Border(lipgloss.NormalBorder(), false, false, true, false).
 		Foreground(lipgloss.Color("205")).
 		Render("edit")
 
-	divider := lipgloss.NewStyle().
-		Width(m.width).
-		Foreground(lipgloss.Color("240")).
-		Border(lipgloss.NormalBorder(), false, false, true, false)
-
-	return lipgloss.JoinVertical(lipgloss.Left, header, divider.Render())
+	return lipgloss.JoinVertical(lipgloss.Left, header)
 }
 
 func (m Model) footerView() string {
-	// TODO: maybe use the statusbar?
 	totalLines := len(m.buffer.Lines)
 	if totalLines == 0 {
 		totalLines = 1
@@ -234,18 +228,17 @@ func (m Model) footerView() string {
 		m.cursor.Y+1, m.cursor.X+1, totalLines)
 
 	return lipgloss.NewStyle().
-		Width(m.width).
 		Align(lipgloss.Center).
+		Width(m.width).
 		Foreground(lipgloss.Color("240")).
 		Render(info)
 }
 
 func (m Model) View() string {
 	if !m.ready {
-		return "\n  initializing..."
+		return "\n initializing..."
 	}
 
-	// set character under cursor for visual cursor
 	m.setCursorCharacter()
 
 	return lipgloss.JoinVertical(lipgloss.Top,

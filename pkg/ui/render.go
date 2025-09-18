@@ -3,9 +3,6 @@ package ui
 import (
 	"fmt"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/term"
-	"os"
-	"strings"
 )
 
 type KeyHelp struct {
@@ -66,39 +63,4 @@ func RenderStatusBar(filePath string, isDirty bool, cursorX, cursorY int) string
 
 	status := fmt.Sprintf(" %s %s | Ln %d, Col %d ", filePath, dirtyFlag, cursorY+1, cursorX+1)
 	return statusBarStyle.Render(status)
-}
-
-func RenderBuffer(lines [][]rune, cursorX, cursorY int) string {
-	var out strings.Builder
-
-	_, height, err := term.GetSize(os.Stdout.Fd())
-	if err != nil {
-		height = 20
-	}
-	contentHeight := height - 5
-
-	for y := 0; y < contentHeight; y++ {
-		var line string
-		if y < len(lines) {
-			runes := lines[y]
-			if y == cursorY {
-				before := string(runes[:cursorX])
-				cursorChar := " "
-				after := ""
-
-				if cursorX < len(runes) {
-					cursorChar = string(runes[cursorX])
-					after = string(runes[cursorX+1:])
-				}
-				line = before + cursorCharStyle.Render(cursorChar) + after
-			} else {
-				line = string(runes)
-			}
-		} else {
-			line = "" // or "~"
-		}
-		out.WriteString(line + "\n")
-	}
-
-	return out.String()
 }
