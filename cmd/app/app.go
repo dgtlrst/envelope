@@ -1,10 +1,14 @@
 package app
 
+// Text editor using Bubble Tea with optimized cursor rendering
+
 import (
 	"envelope/pkg/edit"
 	"fmt"
+	"log"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -16,52 +20,122 @@ type Model struct {
 	buffer        *edit.TextBuffer
 	cursor        *edit.CursorPointer
 	ready         bool
+
+	visualCursor cursor.Model
+	contentDirty bool
 }
 
 func NewModel() Model {
+	// Create standard cursor
+	visualCursor := cursor.New()
+	visualCursor.SetMode(cursor.CursorBlink)
+	visualCursor.BlinkSpeed = 500
+
+	visualCursor.Style = lipgloss.NewStyle().
+		Background(lipgloss.Color("#00FF00")).
+		Foreground(lipgloss.Color("#000000"))
+	visualCursor.TextStyle = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#00FF00"))
+
 	return Model{
-		buffer: edit.NewTextBuffer(),
-		cursor: edit.NewCursor(0, 0),
-		ready:  false,
+		buffer:       edit.NewTextBuffer(),
+		cursor:       edit.NewCursor(0, 0),
+		visualCursor: visualCursor,
+		ready:        false,
+		contentDirty: true,
 	}
 }
 
-func (m Model) Init() tea.Cmd {
-	return nil
+func (m *Model) updateViewportContent() {
+	// update only if buf content has changed
+	if !m.contentDirty {
+		return
+	}
+
+	var lines = make([]string, len(m.buffer.Lines)) // pre-allocate slice to avoid reallocation
+	for i, line := range m.buffer.Lines {
+		lines[i] = string(line)
+	}
+
+	content := strings.Join(lines, "\n")
+	m.viewport.SetContent(content)
+	m.contentDirty = false
 }
 
+func (m Model) Init() tea.Cmd {
+	return m.visualCursor.Focus() // focus the cursor
+}
+
+// 1. fix alt and tab presses being considered normal characters
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
+	var cmds []tea.Cmd
+	var cursorCmd tea.Cmd
+
+	// update cursor
+	m.visualCursor, cursorCmd = m.visualCursor.Update(msg)
+	if cursorCmd != nil {
+		cmds = append(cmds, cursorCmd)
+	}
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c":
-			return m, tea.Quit
-		case "enter":
-			// insert new line (replace content with buf)
+
+		switch {
+		case (len(msg.Runes) == 1 && msg.Type == tea.KeyRunes) || msg.String() == " ":
+			var r rune
+			if len(msg.Runes) == 1 {
+				r = msg.Runes[0]
+			} else {
+				r = ' ' // fallback for space
+			}
+			// m.UndoStack.Push(m.Buffer)
+			m.buffer.InsertRune(m.cursor.Y, m.cursor.X, r)
+			m.cursor.MoveRight(m.buffer)
+			m.contentDirty = true
+
+		case msg.Type == tea.KeyEnter:
 			m.buffer.InsertNewLine(m.cursor.Y, m.cursor.X)
 			m.cursor.Y++
 			m.cursor.X = 0
-			m.updateViewportContent()
-		case "backspace":
-			// todo
-			// m.updateViewportContent()
-		case "left":
-			// todo
-		case "right":
-			// todo
-		case "up":
-			// todo
-		case "down":
-			// todo
+			m.contentDirty = true
+
+		case msg.Type == tea.KeyBackspace:
+			// todo: move this functionality into deleteRune() - this is where these cases should be handled
+			if m.cursor.X == 0 && m.cursor.Y > 0 {
+				// beginning of line - merge with previous line
+				// save length of previous line, if previous line is not empty
+				prevLineLen := len(m.buffer.GetLine(m.cursor.Y - 1))
+				m.buffer.DeleteRune(m.cursor.Y, m.cursor.X)
+				// move cursor to previous line at the junction point
+				m.cursor.Y--
+				m.cursor.X = prevLineLen
+			} else {
+				// normal character deletion
+				m.buffer.DeleteRune(m.cursor.Y, m.cursor.X)
+				m.cursor.X--
+			}
+			// clamp cursor position to valid range, just in case
+			m.cursor.Clamp(m.buffer)
+			m.contentDirty = true
+
+		case msg.Type == tea.KeyLeft:
+			m.cursor.MoveLeft(m.buffer)
+
+		case msg.Type == tea.KeyRight:
+			m.cursor.MoveRight(m.buffer)
+
+		case msg.Type == tea.KeyUp:
+			m.cursor.MoveUp(m.buffer)
+
+		case msg.Type == tea.KeyDown:
+			m.cursor.MoveDown(m.buffer)
+
+		case msg.Type == tea.KeyCtrlC:
+			return m, tea.Quit
+
 		default:
-			// handle regular character input
-			// todo
-			ch := []rune(msg.String())
-			m.buffer.InsertRune(m.cursor.Y, m.cursor.X, ch[0])
-			m.cursor.X++
-			m.updateViewportContent()
+			fmt.Println("default case reached:", msg.String())
+			log.Println("default case reached on key msg:", msg.String())
 		}
 
 	case tea.WindowSizeMsg:
@@ -83,31 +157,54 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// handle viewport scrolling
-	m.viewport, cmd = m.viewport.Update(msg)
-	return m, cmd
+	// update key press
+	m.updateViewportContent()
+
+	// Update viewport
+	var viewportCmd tea.Cmd
+	m.viewport, viewportCmd = m.viewport.Update(msg)
+	if viewportCmd != nil {
+		cmds = append(cmds, viewportCmd)
+	}
+
+	return m, tea.Batch(cmds...)
 }
 
-// updateViewportContent renders the document content with cursor
-func (m *Model) updateViewportContent() {
-	var lines []string
+// set the character under the cursor
+func (m *Model) setCursorCharacter() {
+	// Always display a thick block cursor
+	m.visualCursor.SetChar("█")
+}
 
-	for i, line := range m.buffer.Lines {
-		if i == m.cursor.Y {
-			// add cursor to current line
-			if m.cursor.X <= len(line) {
-				cursorLine := string(line[:m.cursor.X]) + "│" + string(line[m.cursor.X:])
-				lines = append(lines, cursorLine)
-			} else {
-				lines = append(lines, string(line)+"│")
-			}
-		} else {
-			lines = append(lines, string(line))
+// render viewport content with cursor overlay
+func (m Model) viewportWithCursor() string {
+	baseView := m.viewport.View()
+
+	// calculate cursor position in rendered view
+	cursorLine := m.cursor.Y - m.viewport.YOffset
+	if cursorLine < 0 || cursorLine >= m.viewport.Height {
+		return baseView // cursor not visible in viewport
+	}
+
+	// split into lines and overlay cursor
+	lines := strings.Split(baseView, "\n")
+	if cursorLine < len(lines) {
+		line := lines[cursorLine]
+		runes := []rune(line)
+
+		if m.cursor.X < len(runes) {
+			// replace character at cursor position with styled cursor
+			before := string(runes[:m.cursor.X])
+			after := string(runes[m.cursor.X+1:])
+			cursorChar := m.visualCursor.View()
+			lines[cursorLine] = before + cursorChar + after
+		} else if m.cursor.X == len(runes) {
+			// cursor at end of line
+			lines[cursorLine] = line + m.visualCursor.View()
 		}
 	}
 
-	content := strings.Join(lines, "\n")
-	m.viewport.SetContent(content)
+	return strings.Join(lines, "\n")
 }
 
 func (m Model) headerView() string {
@@ -147,9 +244,13 @@ func (m Model) View() string {
 	if !m.ready {
 		return "\n  initializing..."
 	}
+
+	// set character under cursor for visual cursor
+	m.setCursorCharacter()
+
 	return lipgloss.JoinVertical(lipgloss.Top,
 		m.headerView(),
-		m.viewport.View(),
+		m.viewportWithCursor(), // render viewport with cursor overlay
 		m.footerView(),
 	)
 }
