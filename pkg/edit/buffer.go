@@ -41,6 +41,7 @@ func (buffer *TextBuffer) InsertRune(line, col int, ch rune) {
 		buffer.SetDirty(true)
 	}
 }
+
 func (buffer *TextBuffer) DeleteRune(line, col int) {
 	if buffer.validateIndex(line, col) {
 		if col == 0 { // delete new line
@@ -60,6 +61,7 @@ func (buffer *TextBuffer) DeleteRune(line, col int) {
 		buffer.SetDirty(true)
 	}
 }
+
 func (buffer *TextBuffer) InsertNewLine(line, col int) {
 	if line < 0 || line >= len(buffer.Lines) {
 		return
@@ -77,6 +79,7 @@ func (buffer *TextBuffer) InsertNewLine(line, col int) {
 		buffer.Lines[:line+1], append([][]rune{after}, buffer.Lines[line+1:]...)...)
 	buffer.SetDirty(true)
 }
+
 func (buffer *TextBuffer) MergeLine(line int) {
 	// TODO: check if line is valid (outsource this to a separate function)
 	if line < 0 || line+1 >= len(buffer.Lines) {
@@ -87,21 +90,26 @@ func (buffer *TextBuffer) MergeLine(line int) {
 	buffer.Lines = append(buffer.Lines[:line+1], buffer.Lines[line+2:]...)
 	buffer.SetDirty(true)
 }
+
 func (buffer *TextBuffer) GetLine(line int) []rune {
 	if line >= 0 && line < len(buffer.Lines) {
 		return buffer.Lines[line]
 	}
 	return []rune{} // should panic
 }
+
 func (buffer *TextBuffer) LineCount() int {
 	return len(buffer.Lines)
 }
+
 func (buffer *TextBuffer) IsDirty() bool {
 	return buffer.Dirty
 }
+
 func (buffer *TextBuffer) SetDirty(dirty bool) {
 	buffer.Dirty = dirty
 }
+
 func (buffer *TextBuffer) validateIndex(line, col int) bool {
 	if line < 0 || line >= len(buffer.Lines) {
 		return false

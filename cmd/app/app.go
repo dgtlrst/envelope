@@ -52,7 +52,8 @@ func (m *Model) updateViewportContent() {
 		return
 	}
 
-	var lines = make([]string, len(m.buffer.Lines)) // pre-allocate slice to avoid reallocation
+	// pre-allocate slice to avoid reallocation
+	var lines = make([]string, len(m.buffer.Lines))
 	for i, line := range m.buffer.Lines {
 		lines[i] = string(line)
 	}
@@ -63,7 +64,8 @@ func (m *Model) updateViewportContent() {
 }
 
 func (m Model) Init() tea.Cmd {
-	return m.visualCursor.Focus() // focus the cursor
+	// focus the cursor
+	return m.visualCursor.Focus()
 }
 
 // 1. fix alt and tab presses being considered normal characters
