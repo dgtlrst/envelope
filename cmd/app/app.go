@@ -52,7 +52,8 @@ func (m *Model) updateViewportContent() {
 		return
 	}
 
-	var lines = make([]string, len(m.buffer.Lines)) // pre-allocate slice to avoid reallocation
+	// pre-allocate slice to avoid reallocation
+	var lines = make([]string, len(m.buffer.Lines))
 	for i, line := range m.buffer.Lines {
 		lines[i] = string(line)
 	}
@@ -63,7 +64,8 @@ func (m *Model) updateViewportContent() {
 }
 
 func (m Model) Init() tea.Cmd {
-	return m.visualCursor.Focus() // focus the cursor
+	// focus the cursor
+	return m.visualCursor.Focus()
 }
 
 // 1. fix alt and tab presses being considered normal characters
@@ -172,7 +174,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // set the character under the cursor
 func (m *Model) setCursorCharacter() {
-	// Always display a thick block cursor
 	m.visualCursor.SetChar("█")
 }
 
@@ -207,24 +208,23 @@ func (m Model) viewportWithCursor() string {
 	return strings.Join(lines, "\n")
 }
 
-func (m Model) headerView() string {
+func (m Model) View() string {
+	if !m.ready {
+		return "\n initializing..."
+	}
+
+	// set cursor character
+	m.setCursorCharacter()
+
+	// render hdr
 	header := lipgloss.NewStyle().
-		Width(m.width).
 		Align(lipgloss.Center).
-		Bold(true).
+		Width(m.width).
+		Border(lipgloss.NormalBorder(), false, false, true, false).
 		Foreground(lipgloss.Color("205")).
 		Render("edit")
 
-	divider := lipgloss.NewStyle().
-		Width(m.width).
-		Foreground(lipgloss.Color("240")).
-		Border(lipgloss.NormalBorder(), false, false, true, false)
-
-	return lipgloss.JoinVertical(lipgloss.Left, header, divider.Render())
-}
-
-func (m Model) footerView() string {
-	// TODO: maybe use the statusbar?
+	// render ftr
 	totalLines := len(m.buffer.Lines)
 	if totalLines == 0 {
 		totalLines = 1
@@ -233,24 +233,18 @@ func (m Model) footerView() string {
 	info := fmt.Sprintf("line %d, col %d | lines: %d | press ctrl+c to quit",
 		m.cursor.Y+1, m.cursor.X+1, totalLines)
 
-	return lipgloss.NewStyle().
-		Width(m.width).
+	footer := lipgloss.NewStyle().
 		Align(lipgloss.Center).
+		Width(m.width).
 		Foreground(lipgloss.Color("240")).
 		Render(info)
-}
 
-func (m Model) View() string {
-	if !m.ready {
-		return "\n  initializing..."
-	}
+	// render content
+	content := lipgloss.NewStyle().
+		Width(m.width).
+		Height(m.height-lipgloss.Height(header)-lipgloss.Height(footer)).
+		Align(lipgloss.Center, lipgloss.Center).
+		Render(m.viewportWithCursor())
 
-	// set character under cursor for visual cursor
-	m.setCursorCharacter()
-
-	return lipgloss.JoinVertical(lipgloss.Top,
-		m.headerView(),
-		m.viewportWithCursor(), // render viewport with cursor overlay
-		m.footerView(),
-	)
+	return lipgloss.JoinVertical(lipgloss.Top, header, content, footer)
 }
